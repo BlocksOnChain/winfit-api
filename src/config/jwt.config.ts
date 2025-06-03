@@ -12,6 +12,7 @@ export default registerAs(
 );
 
 export const jwtRefreshConfig = registerAs('jwtRefresh', () => ({
-  secret: process.env.JWT_REFRESH_SECRET || 'refresh-secret-change-in-production',
+  secret:
+    process.env.JWT_REFRESH_SECRET || 'refresh-secret-change-in-production',
   expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-})); 
+}));

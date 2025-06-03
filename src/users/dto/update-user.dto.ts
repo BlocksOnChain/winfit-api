@@ -1,5 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, IsDateString, IsIn, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  MaxLength,
+  IsDateString,
+  IsIn,
+  IsNumber,
+  Min,
+  Max,
+} from 'class-validator';
 
 export class UpdateUserDto {
   @ApiProperty({ example: 'John', required: false })
@@ -19,7 +28,11 @@ export class UpdateUserDto {
   @IsDateString()
   dateOfBirth?: string;
 
-  @ApiProperty({ example: 'Male', enum: ['Male', 'Female', 'Other'], required: false })
+  @ApiProperty({
+    example: 'Male',
+    enum: ['Male', 'Female', 'Other'],
+    required: false,
+  })
   @IsOptional()
   @IsIn(['Male', 'Female', 'Other'])
   gender?: string;
@@ -38,14 +51,24 @@ export class UpdateUserDto {
   @Max(300)
   weightKg?: number;
 
-  @ApiProperty({ example: 10000, minimum: 1000, maximum: 50000, required: false })
+  @ApiProperty({
+    example: 10000,
+    minimum: 1000,
+    maximum: 50000,
+    required: false,
+  })
   @IsOptional()
   @IsNumber()
   @Min(1000)
   @Max(50000)
   dailyStepGoal?: number;
 
-  @ApiProperty({ example: 70000, minimum: 7000, maximum: 350000, required: false })
+  @ApiProperty({
+    example: 70000,
+    minimum: 7000,
+    maximum: 350000,
+    required: false,
+  })
   @IsOptional()
   @IsNumber()
   @Min(7000)
@@ -56,4 +79,4 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   timezone?: string;
-} 
+}

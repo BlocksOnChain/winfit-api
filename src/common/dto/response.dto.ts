@@ -33,6 +33,10 @@ export class ApiResponseDto<T = any> {
   }
 
   static error(code: string, message: string, details?: any): ApiResponseDto {
-    return new ApiResponseDto(false, undefined, undefined, { code, message, details });
+    return new ApiResponseDto(false, undefined, undefined, {
+      code,
+      message,
+      details,
+    });
   }
-} 
+}

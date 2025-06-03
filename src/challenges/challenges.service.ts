@@ -1,10 +1,18 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, LessThan, Between } from 'typeorm';
 import { Challenge } from './entities/challenge.entity';
 import { UserChallenge } from './entities/user-challenge.entity';
 import { ChallengeProgress } from './entities/challenge-progress.entity';
-import { UpdateProgressDto } from './dto/update-progress.dto';
+import { CreateChallengeDto } from './dto/create-challenge.dto';
+import { ChallengeQueryDto } from './dto/challenge-query.dto';
+import { ChallengeBaselineService } from './challenge-baseline.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 interface ChallengeFilters {
   type?: string;
@@ -25,26 +33,76 @@ export class ChallengesService {
     private readonly userChallengeRepository: Repository<UserChallenge>,
     @InjectRepository(ChallengeProgress)
     private readonly challengeProgressRepository: Repository<ChallengeProgress>,
+    private readonly challengeBaselineService: ChallengeBaselineService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
-  async getChallenges(filters: ChallengeFilters): Promise<{ challenges: Challenge[]; total: number }> {
-    const queryBuilder = this.challengeRepository.createQueryBuilder('challenge');
-    
+  async createChallenge(
+    createChallengeDto: CreateChallengeDto,
+    createdBy: string,
+  ): Promise<Challenge> {
+    const startDate = new Date(createChallengeDto.startDate);
+    const endDate = new Date(createChallengeDto.endDate);
+
+    // Validate dates
+    if (startDate >= endDate) {
+      throw new BadRequestException('Start date must be before end date');
+    }
+
+    if (startDate < new Date()) {
+      throw new BadRequestException('Start date cannot be in the past');
+    }
+
+    // Calculate duration if not provided correctly
+    const calculatedDuration = Math.ceil(
+      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
+    if (Math.abs(calculatedDuration - createChallengeDto.duration) > 1) {
+      throw new BadRequestException(
+        'Duration does not match the difference between start and end dates',
+      );
+    }
+
+    const challenge = this.challengeRepository.create({
+      ...createChallengeDto,
+      startDate,
+      endDate,
+      createdBy,
+      isActive: true,
+      isFeatured: createChallengeDto.isFeatured || false,
+    });
+
+    return this.challengeRepository.save(challenge);
+  }
+
+  async getChallenges(
+    filters: ChallengeFilters,
+  ): Promise<{ challenges: Challenge[]; total: number }> {
+    const queryBuilder =
+      this.challengeRepository.createQueryBuilder('challenge');
+
     // Apply filters
     if (filters.type) {
       queryBuilder.andWhere('challenge.type = :type', { type: filters.type });
     }
-    
+
     if (filters.category) {
-      queryBuilder.andWhere('challenge.category = :category', { category: filters.category });
+      queryBuilder.andWhere('challenge.category = :category', {
+        category: filters.category,
+      });
     }
-    
+
     if (filters.difficulty) {
-      queryBuilder.andWhere('challenge.difficulty = :difficulty', { difficulty: filters.difficulty });
+      queryBuilder.andWhere('challenge.difficulty = :difficulty', {
+        difficulty: filters.difficulty,
+      });
     }
-    
+
     if (filters.featured !== undefined) {
-      queryBuilder.andWhere('challenge.isFeatured = :featured', { featured: filters.featured });
+      queryBuilder.andWhere('challenge.isFeatured = :featured', {
+        featured: filters.featured,
+      });
     }
 
     // Status filter
@@ -52,7 +110,10 @@ export class ChallengesService {
     if (filters.status === 'upcoming') {
       queryBuilder.andWhere('challenge.startDate > :now', { now });
     } else if (filters.status === 'active') {
-      queryBuilder.andWhere('challenge.startDate <= :now AND challenge.endDate >= :now', { now });
+      queryBuilder.andWhere(
+        'challenge.startDate <= :now AND challenge.endDate >= :now',
+        { now },
+      );
     } else if (filters.status === 'completed') {
       queryBuilder.andWhere('challenge.endDate < :now', { now });
     }
@@ -119,14 +180,21 @@ export class ChallengesService {
     };
   }
 
-  async getUserChallenges(userId: string, status?: string): Promise<UserChallenge[]> {
-    const queryBuilder = this.userChallengeRepository.createQueryBuilder('userChallenge')
+  async getUserChallenges(
+    userId: string,
+    status?: string,
+  ): Promise<UserChallenge[]> {
+    const queryBuilder = this.userChallengeRepository
+      .createQueryBuilder('userChallenge')
       .leftJoinAndSelect('userChallenge.challenge', 'challenge')
       .where('userChallenge.user.id = :userId', { userId });
 
     if (status === 'active') {
       const now = new Date();
-      queryBuilder.andWhere('challenge.startDate <= :now AND challenge.endDate >= :now AND userChallenge.isCompleted = false', { now });
+      queryBuilder.andWhere(
+        'challenge.startDate <= :now AND challenge.endDate >= :now AND userChallenge.isCompleted = false',
+        { now },
+      );
     } else if (status === 'completed') {
       queryBuilder.andWhere('userChallenge.isCompleted = true');
     } else if (status === 'upcoming') {
@@ -134,12 +202,13 @@ export class ChallengesService {
       queryBuilder.andWhere('challenge.startDate > :now', { now });
     }
 
-    return queryBuilder
-      .orderBy('challenge.startDate', 'DESC')
-      .getMany();
+    return queryBuilder.orderBy('challenge.startDate', 'DESC').getMany();
   }
 
-  async joinChallenge(challengeId: string, userId: string): Promise<UserChallenge> {
+  async joinChallenge(
+    challengeId: string,
+    userId: string,
+  ): Promise<UserChallenge> {
     const challenge = await this.challengeRepository.findOne({
       where: { id: challengeId },
     });
@@ -160,7 +229,9 @@ export class ChallengesService {
     });
 
     if (existingParticipation) {
-      throw new ConflictException('User is already participating in this challenge');
+      throw new ConflictException(
+        'User is already participating in this challenge',
+      );
     }
 
     // Check max participants limit
@@ -170,7 +241,9 @@ export class ChallengesService {
       });
 
       if (currentParticipants >= challenge.maxParticipants) {
-        throw new ConflictException('Challenge has reached maximum participants');
+        throw new ConflictException(
+          'Challenge has reached maximum participants',
+        );
       }
     }
 
@@ -182,7 +255,33 @@ export class ChallengesService {
       completionPercentage: 0,
     });
 
-    return this.userChallengeRepository.save(userChallenge);
+    const savedUserChallenge =
+      await this.userChallengeRepository.save(userChallenge);
+
+    // Set baseline data for progress tracking
+    try {
+      await this.challengeBaselineService.setUserChallengeBaseline(
+        userId,
+        challengeId,
+      );
+    } catch (error) {
+      // Log error but don't fail the join operation
+      console.error('Error setting challenge baseline:', error);
+    }
+
+    // Send challenge joined notification
+    try {
+      await this.notificationsService.createChallengeNotification(
+        userId,
+        challenge.title,
+        `You've successfully joined the challenge! Start tracking your progress.`,
+        challenge.id,
+      );
+    } catch (error) {
+      console.error('Error sending challenge notification:', error);
+    }
+
+    return savedUserChallenge;
   }
 
   async leaveChallenge(challengeId: string, userId: string): Promise<void> {
@@ -191,7 +290,9 @@ export class ChallengesService {
     });
 
     if (!userChallenge) {
-      throw new NotFoundException('User is not participating in this challenge');
+      throw new NotFoundException(
+        'User is not participating in this challenge',
+      );
     }
 
     if (userChallenge.isCompleted) {
@@ -201,89 +302,81 @@ export class ChallengesService {
     await this.userChallengeRepository.remove(userChallenge);
   }
 
-  async updateProgress(
-    challengeId: string,
-    userId: string,
-    updateProgressDto: UpdateProgressDto,
-  ): Promise<UserChallenge> {
-    const userChallenge = await this.userChallengeRepository.findOne({
-      where: { challenge: { id: challengeId }, user: { id: userId } },
-      relations: ['challenge'],
-    });
-
-    if (!userChallenge) {
-      throw new NotFoundException('User is not participating in this challenge');
-    }
-
-    if (userChallenge.isCompleted) {
-      throw new ConflictException('Challenge is already completed');
-    }
-
-    // Create or update daily progress
-    let challengeProgress = await this.challengeProgressRepository.findOne({
+  async getActiveChallenges(): Promise<Challenge[]> {
+    const now = new Date();
+    return this.challengeRepository.find({
       where: {
-        userChallenge: { id: userChallenge.id },
-        date: new Date(updateProgressDto.date),
+        isActive: true,
+        startDate: LessThan(now),
+        endDate: MoreThan(now),
       },
+      order: { startDate: 'ASC' },
     });
-
-    if (!challengeProgress) {
-      challengeProgress = this.challengeProgressRepository.create({
-        userChallenge,
-        date: new Date(updateProgressDto.date),
-        dailySteps: updateProgressDto.progress,
-        dailyDistance: updateProgressDto.progress,
-      });
-    } else {
-      challengeProgress.dailySteps = updateProgressDto.progress;
-      challengeProgress.dailyDistance = updateProgressDto.progress;
-    }
-
-    await this.challengeProgressRepository.save(challengeProgress);
-
-    // Recalculate total progress
-    await this.recalculateUserChallengeProgress(userChallenge.id);
-
-    const updatedUserChallenge = await this.userChallengeRepository.findOne({
-      where: { id: userChallenge.id },
-      relations: ['challenge'],
-    });
-
-    if (!updatedUserChallenge) {
-      throw new NotFoundException('User challenge not found after update');
-    }
-
-    return updatedUserChallenge;
   }
 
-  private async recalculateUserChallengeProgress(userChallengeId: string): Promise<void> {
-    const userChallenge = await this.userChallengeRepository.findOne({
-      where: { id: userChallengeId },
-      relations: ['challenge'],
+  async getChallengeById(challengeId: string): Promise<Challenge> {
+    const challenge = await this.challengeRepository.findOne({
+      where: { id: challengeId },
+      relations: ['creator'],
     });
 
-    if (!userChallenge) return;
-
-    // Sum up all progress
-    const progressEntries = await this.challengeProgressRepository.find({
-      where: { userChallenge: { id: userChallengeId } },
-    });
-
-    const totalProgress = progressEntries.reduce((sum, entry) => {
-      return sum + (userChallenge.challenge.category === 'Steps' ? entry.dailySteps : entry.dailyDistance);
-    }, 0);
-
-    const completionPercentage = Math.min((totalProgress / userChallenge.challenge.goal) * 100, 100);
-    const isCompleted = completionPercentage >= 100;
-
-    userChallenge.currentProgress = totalProgress;
-    userChallenge.completionPercentage = Number(completionPercentage.toFixed(2));
-    userChallenge.isCompleted = isCompleted;
-
-    if (isCompleted && !userChallenge.completedAt) {
-      userChallenge.completedAt = new Date();
+    if (!challenge) {
+      throw new NotFoundException('Challenge not found');
     }
 
-    await this.userChallengeRepository.save(userChallenge);
+    return challenge;
   }
-} 
+
+  async updateChallenge(
+    challengeId: string,
+    updateData: Partial<Challenge>,
+  ): Promise<Challenge> {
+    const challenge = await this.getChallengeById(challengeId);
+
+    // Prevent updating certain fields if challenge has already started
+    const now = new Date();
+    if (challenge.startDate <= now) {
+      const restrictedFields = [
+        'goal',
+        'duration',
+        'startDate',
+        'type',
+        'category',
+      ];
+      const hasRestrictedUpdate = restrictedFields.some(
+        (field) => field in updateData,
+      );
+
+      if (hasRestrictedUpdate) {
+        throw new BadRequestException(
+          'Cannot update goal, duration, dates, type, or category after challenge has started',
+        );
+      }
+    }
+
+    await this.challengeRepository.update(challengeId, updateData);
+    return this.getChallengeById(challengeId);
+  }
+
+  async deleteChallenge(challengeId: string): Promise<void> {
+    const challenge = await this.getChallengeById(challengeId);
+
+    // Check if challenge has participants
+    const participantCount = await this.userChallengeRepository.count({
+      where: { challenge: { id: challengeId } },
+    });
+
+    if (participantCount > 0) {
+      throw new ConflictException(
+        'Cannot delete challenge with existing participants. Deactivate it instead.',
+      );
+    }
+
+    await this.challengeRepository.remove(challenge);
+  }
+
+  async deactivateChallenge(challengeId: string): Promise<Challenge> {
+    await this.challengeRepository.update(challengeId, { isActive: false });
+    return this.getChallengeById(challengeId);
+  }
+}

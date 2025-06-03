@@ -17,4 +17,4 @@ export default registerAs(
     logging: process.env.NODE_ENV === 'development',
     autoLoadEntities: true,
   }),
-); 
+);

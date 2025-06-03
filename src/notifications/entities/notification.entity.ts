@@ -54,4 +54,4 @@ export class Notification {
   @ManyToOne(() => User, (user) => user.notifications, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
-} 
+}

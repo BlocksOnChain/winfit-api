@@ -40,7 +40,13 @@ export class HealthData {
   @Column({ name: 'heart_rate_avg', type: 'int', nullable: true })
   heartRateAvg?: number;
 
-  @Column({ name: 'sleep_hours', type: 'decimal', precision: 4, scale: 2, nullable: true })
+  @Column({
+    name: 'sleep_hours',
+    type: 'decimal',
+    precision: 4,
+    scale: 2,
+    nullable: true,
+  })
   sleepHours?: number;
 
   @Column({ name: 'water_intake_ml', type: 'int', default: 0 })
@@ -56,4 +62,4 @@ export class HealthData {
   @ManyToOne(() => User, (user) => user.healthData, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
-} 
+}

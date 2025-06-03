@@ -29,7 +29,11 @@ export class Friendship {
   @Column({ name: 'addressee_id' })
   addresseeId: string;
 
-  @Column({ type: 'enum', enum: FriendshipStatus, default: FriendshipStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: FriendshipStatus,
+    default: FriendshipStatus.PENDING,
+  })
   status: FriendshipStatus;
 
   @CreateDateColumn({ name: 'created_at' })
@@ -39,11 +43,15 @@ export class Friendship {
   updatedAt: Date;
 
   // Relations
-  @ManyToOne(() => User, (user) => user.sentFriendRequests, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user) => user.sentFriendRequests, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'requester_id' })
   requester: User;
 
-  @ManyToOne(() => User, (user) => user.receivedFriendRequests, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user) => user.receivedFriendRequests, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'addressee_id' })
   addressee: User;
-} 
+}

@@ -32,4 +32,4 @@ export class ApiResponseDto<T> {
     this.error = error;
     this.timestamp = new Date().toISOString();
   }
-} 
+}

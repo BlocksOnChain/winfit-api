@@ -1,29 +1,32 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, MoreThan, Between } from 'typeorm';
+import { Cache } from 'cache-manager';
 import { User } from '../users/entities/user.entity';
 import { UserChallenge } from '../challenges/entities/user-challenge.entity';
 import { HealthData } from '../health/entities/health-data.entity';
+import {
+  Friendship,
+  FriendshipStatus,
+} from '../friends/entities/friendship.entity';
+import {
+  LeaderboardType,
+  LeaderboardPeriod,
+  LeaderboardQueryDto,
+  UserRankQueryDto,
+} from './dto/leaderboard-query.dto';
+import {
+  LeaderboardResponseDto,
+  LeaderboardEntryDto,
+  UserRankResponseDto,
+  LeaderboardUserDto,
+} from './dto/leaderboard-response.dto';
 
-interface LeaderboardOptions {
-  type: string;
-  period: string;
-  challengeId?: string;
-  limit: number;
-  userId: string;
-}
-
-interface LeaderboardEntry {
-  rank: number;
-  user: {
-    id: string;
-    username: string;
-    firstName: string;
-    lastName: string;
-    avatarUrl?: string;
-  };
-  score: number;
-  change?: number;
+interface LeaderboardCacheData {
+  entries: LeaderboardEntryDto[];
+  totalParticipants: number;
+  lastUpdated: string;
 }
 
 @Injectable()
@@ -35,173 +38,510 @@ export class LeaderboardService {
     private readonly userChallengeRepository: Repository<UserChallenge>,
     @InjectRepository(HealthData)
     private readonly healthDataRepository: Repository<HealthData>,
+    @InjectRepository(Friendship)
+    private readonly friendshipRepository: Repository<Friendship>,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
 
-  async getLeaderboard(options: LeaderboardOptions): Promise<any> {
-    const { type, period, challengeId, limit, userId } = options;
+  async getLeaderboard(
+    options: LeaderboardQueryDto,
+    userId: string,
+  ): Promise<LeaderboardResponseDto> {
+    const {
+      type = LeaderboardType.GLOBAL,
+      period = LeaderboardPeriod.WEEKLY,
+      challengeId,
+      limit = 50,
+    } = options;
 
-    if (type === 'Challenge' && challengeId) {
-      return this.getChallengeLeaderboard(challengeId, limit, userId);
+    // Generate cache key
+    const cacheKey = this.generateCacheKey(type, period, challengeId, limit);
+
+    // Check cache first
+    const cached = await this.cacheManager.get<LeaderboardCacheData>(cacheKey);
+    if (cached) {
+      const userRank = this.findUserRank(cached.entries, userId);
+      return {
+        id: this.generateLeaderboardId(type, period, challengeId),
+        name: this.generateLeaderboardName(type, period),
+        type,
+        period,
+        entries: cached.entries,
+        userRank: userRank || undefined,
+        totalParticipants: cached.totalParticipants,
+        lastUpdated: cached.lastUpdated,
+      };
     }
 
-    if (type === 'Friends') {
-      return this.getFriendsLeaderboard(userId, period, limit);
+    // Generate fresh leaderboard
+    let leaderboardData: LeaderboardCacheData;
+
+    if (type === LeaderboardType.CHALLENGE && challengeId) {
+      leaderboardData = await this.getChallengeLeaderboard(challengeId, limit);
+    } else if (type === LeaderboardType.FRIENDS) {
+      leaderboardData = await this.getFriendsLeaderboard(userId, period, limit);
+    } else {
+      leaderboardData = await this.getGlobalLeaderboard(period, limit);
     }
 
-    return this.getGlobalLeaderboard(period, limit, userId);
+    // Cache the result (TTL: 5 minutes)
+    await this.cacheManager.set(cacheKey, leaderboardData, 300);
+
+    const userRank = this.findUserRank(leaderboardData.entries, userId);
+
+    return {
+      id: this.generateLeaderboardId(type, period, challengeId),
+      name: this.generateLeaderboardName(type, period),
+      type,
+      period,
+      entries: leaderboardData.entries,
+      userRank: userRank || undefined,
+      totalParticipants: leaderboardData.totalParticipants,
+      lastUpdated: leaderboardData.lastUpdated,
+    };
   }
 
-  async getUserRank(userId: string, type: string, period: string): Promise<any> {
-    if (type === 'Friends') {
-      return this.getFriendsUserRank(userId, period);
+  async getUserRank(
+    userId: string,
+    options: UserRankQueryDto,
+  ): Promise<UserRankResponseDto> {
+    const { type = LeaderboardType.GLOBAL, period = LeaderboardPeriod.WEEKLY } =
+      options;
+
+    const cacheKey = `user-rank:${userId}:${type}:${period}`;
+    const cached = await this.cacheManager.get<UserRankResponseDto>(cacheKey);
+
+    if (cached) {
+      return cached;
     }
 
-    return this.getGlobalUserRank(userId, period);
+    let rankData: UserRankResponseDto;
+
+    if (type === LeaderboardType.FRIENDS) {
+      rankData = await this.getFriendsUserRank(userId, period);
+    } else {
+      rankData = await this.getGlobalUserRank(userId, period);
+    }
+
+    // Cache for 2 minutes
+    await this.cacheManager.set(cacheKey, rankData, 120);
+
+    return rankData;
   }
 
-  private async getGlobalLeaderboard(period: string, limit: number, userId: string): Promise<any> {
+  private async getGlobalLeaderboard(
+    period: LeaderboardPeriod,
+    limit: number,
+  ): Promise<LeaderboardCacheData> {
     const dateRange = this.getDateRange(period);
-    
-    // For now, we'll use total steps as the ranking criteria
-    const queryBuilder = this.userRepository.createQueryBuilder('user')
-      .select([
-        'user.id',
-        'user.username', 
-        'user.firstName',
-        'user.lastName',
-        'user.avatarUrl',
-        'user.totalSteps'
-      ])
-      .where('user.isActive = :isActive', { isActive: true })
-      .orderBy('user.totalSteps', 'DESC')
-      .limit(limit);
 
-    const users = await queryBuilder.getMany();
+    if (period === LeaderboardPeriod.ALL_TIME) {
+      // Use total steps from user entity for all-time leaderboard
+      const users = await this.userRepository
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.firstName',
+          'user.lastName',
+          'user.avatarUrl',
+          'user.totalSteps',
+        ])
+        .where('user.isActive = :isActive', { isActive: true })
+        .andWhere('user.totalSteps > :minSteps', { minSteps: 0 })
+        .orderBy('user.totalSteps', 'DESC')
+        .limit(limit)
+        .getMany();
 
-    const entries: LeaderboardEntry[] = users.map((user, index) => ({
-      rank: index + 1,
-      user: {
-        id: user.id,
-        username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        avatarUrl: user.avatarUrl,
-      },
-      score: user.totalSteps,
-    }));
+      const entries = users.map((user, index) => ({
+        rank: index + 1,
+        user: this.mapToLeaderboardUser(user),
+        score: user.totalSteps,
+      }));
 
-    const userRank = entries.findIndex(entry => entry.user.id === userId) + 1;
+      return {
+        entries,
+        totalParticipants: await this.userRepository.count({
+          where: { isActive: true },
+        }),
+        lastUpdated: new Date().toISOString(),
+      };
+    } else {
+      // Use health data for period-based leaderboards
+      const healthData = await this.healthDataRepository
+        .createQueryBuilder('health')
+        .innerJoin('health.user', 'user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.firstName',
+          'user.lastName',
+          'user.avatarUrl',
+          'SUM(health.steps) as totalSteps',
+        ])
+        .where('user.isActive = :isActive', { isActive: true })
+        .andWhere('health.date BETWEEN :startDate AND :endDate', {
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+        })
+        .groupBy(
+          'user.id, user.username, user.firstName, user.lastName, user.avatarUrl',
+        )
+        .orderBy('totalSteps', 'DESC')
+        .limit(limit)
+        .getRawMany();
 
-    return {
-      id: 'global-leaderboard',
-      name: 'Global Leaderboard',
-      type: 'Global',
-      period,
-      entries,
-      userRank: userRank || null,
-      totalParticipants: users.length,
-      lastUpdated: new Date().toISOString(),
-    };
+      const entries = healthData.map((item, index) => ({
+        rank: index + 1,
+        user: {
+          id: item.user_id,
+          username: item.user_username,
+          firstName: item.user_firstName,
+          lastName: item.user_lastName,
+          avatarUrl: item.user_avatarUrl,
+        },
+        score: parseInt(item.totalSteps) || 0,
+      }));
+
+      return {
+        entries,
+        totalParticipants: entries.length,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }
 
-  private async getFriendsLeaderboard(userId: string, period: string, limit: number): Promise<any> {
-    // For now, return empty leaderboard as friends functionality is not implemented
-    return {
-      id: 'friends-leaderboard',
-      name: 'Friends Leaderboard',
-      type: 'Friends',
-      period,
-      entries: [],
-      userRank: null,
-      totalParticipants: 0,
-      lastUpdated: new Date().toISOString(),
-    };
+  private async getFriendsLeaderboard(
+    userId: string,
+    period: LeaderboardPeriod,
+    limit: number,
+  ): Promise<LeaderboardCacheData> {
+    // Get user's friends
+    const friendships = await this.friendshipRepository.find({
+      where: [
+        { requesterId: userId, status: FriendshipStatus.ACCEPTED },
+        { addresseeId: userId, status: FriendshipStatus.ACCEPTED },
+      ],
+    });
+
+    const friendIds = friendships.map((f) =>
+      f.requesterId === userId ? f.addresseeId : f.requesterId,
+    );
+
+    // Include the user themselves in the leaderboard
+    friendIds.push(userId);
+
+    if (friendIds.length === 0) {
+      return {
+        entries: [],
+        totalParticipants: 0,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+
+    const dateRange = this.getDateRange(period);
+
+    if (period === LeaderboardPeriod.ALL_TIME) {
+      const users = await this.userRepository
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.firstName',
+          'user.lastName',
+          'user.avatarUrl',
+          'user.totalSteps',
+        ])
+        .where('user.id IN (:...friendIds)', { friendIds })
+        .andWhere('user.isActive = :isActive', { isActive: true })
+        .orderBy('user.totalSteps', 'DESC')
+        .limit(limit)
+        .getMany();
+
+      const entries = users.map((user, index) => ({
+        rank: index + 1,
+        user: this.mapToLeaderboardUser(user),
+        score: user.totalSteps,
+      }));
+
+      return {
+        entries,
+        totalParticipants: friendIds.length,
+        lastUpdated: new Date().toISOString(),
+      };
+    } else {
+      const healthData = await this.healthDataRepository
+        .createQueryBuilder('health')
+        .innerJoin('health.user', 'user')
+        .select([
+          'user.id',
+          'user.username',
+          'user.firstName',
+          'user.lastName',
+          'user.avatarUrl',
+          'SUM(health.steps) as totalSteps',
+        ])
+        .where('user.id IN (:...friendIds)', { friendIds })
+        .andWhere('user.isActive = :isActive', { isActive: true })
+        .andWhere('health.date BETWEEN :startDate AND :endDate', {
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+        })
+        .groupBy(
+          'user.id, user.username, user.firstName, user.lastName, user.avatarUrl',
+        )
+        .orderBy('totalSteps', 'DESC')
+        .limit(limit)
+        .getRawMany();
+
+      const entries = healthData.map((item, index) => ({
+        rank: index + 1,
+        user: {
+          id: item.user_id,
+          username: item.user_username,
+          firstName: item.user_firstName,
+          lastName: item.user_lastName,
+          avatarUrl: item.user_avatarUrl,
+        },
+        score: parseInt(item.totalSteps) || 0,
+      }));
+
+      return {
+        entries,
+        totalParticipants: friendIds.length,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
   }
 
-  private async getChallengeLeaderboard(challengeId: string, limit: number, userId: string): Promise<any> {
+  private async getChallengeLeaderboard(
+    challengeId: string,
+    limit: number,
+  ): Promise<LeaderboardCacheData> {
     const leaderboard = await this.userChallengeRepository.find({
       where: { challenge: { id: challengeId } },
-      relations: ['user'],
+      relations: ['user', 'challenge'],
       order: { currentProgress: 'DESC' },
       take: limit,
     });
 
-    const entries: LeaderboardEntry[] = leaderboard.map((uc, index) => ({
+    const entries = leaderboard.map((uc, index) => ({
       rank: index + 1,
-      user: {
-        id: uc.user.id,
-        username: uc.user.username,
-        firstName: uc.user.firstName,
-        lastName: uc.user.lastName,
-        avatarUrl: uc.user.avatarUrl,
-      },
+      user: this.mapToLeaderboardUser(uc.user),
       score: uc.currentProgress,
+      percentage: uc.completionPercentage,
     }));
 
-    const userRank = entries.findIndex(entry => entry.user.id === userId) + 1;
-
     return {
-      id: `challenge-${challengeId}`,
-      name: 'Challenge Leaderboard',
-      type: 'Challenge',
-      period: 'Challenge',
       entries,
-      userRank: userRank || null,
       totalParticipants: leaderboard.length,
       lastUpdated: new Date().toISOString(),
     };
   }
 
-  private async getGlobalUserRank(userId: string, period: string): Promise<any> {
-    const totalUsers = await this.userRepository.count({ where: { isActive: true } });
+  private async getGlobalUserRank(
+    userId: string,
+    period: LeaderboardPeriod,
+  ): Promise<UserRankResponseDto> {
+    const dateRange = this.getDateRange(period);
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    
+
     if (!user) {
       return {
         rank: null,
-        totalParticipants: totalUsers,
+        totalParticipants: 0,
         score: 0,
         change: 0,
+        period,
       };
     }
 
-    const betterUsers = await this.userRepository.count({
-      where: {
-        isActive: true,
-        totalSteps: user.totalSteps ? { $gt: user.totalSteps } : undefined,
-      },
+    if (period === LeaderboardPeriod.ALL_TIME) {
+      const totalUsers = await this.userRepository.count({
+        where: { isActive: true },
+      });
+      const betterUsers = await this.userRepository.count({
+        where: {
+          isActive: true,
+          totalSteps: user.totalSteps ? MoreThan(user.totalSteps) : MoreThan(0),
+        },
+      });
+
+      return {
+        rank: betterUsers + 1,
+        totalParticipants: totalUsers,
+        score: user.totalSteps,
+        change: 0, // Would need historical data
+        period,
+      };
+    } else {
+      // Calculate user's score for the period
+      const userHealthData = await this.healthDataRepository
+        .createQueryBuilder('health')
+        .select('SUM(health.steps)', 'totalSteps')
+        .where('health.userId = :userId', { userId })
+        .andWhere('health.date BETWEEN :startDate AND :endDate', {
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+        })
+        .getRawOne();
+
+      const userScore = parseInt(userHealthData?.totalSteps) || 0;
+
+      // Count users with better scores
+      const betterUsersCount = await this.healthDataRepository
+        .createQueryBuilder('health')
+        .innerJoin('health.user', 'user')
+        .select('health.userId')
+        .addSelect('SUM(health.steps)', 'totalSteps')
+        .where('user.isActive = :isActive', { isActive: true })
+        .andWhere('health.date BETWEEN :startDate AND :endDate', {
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+        })
+        .groupBy('health.userId')
+        .having('SUM(health.steps) > :userScore', { userScore })
+        .getCount();
+
+      // Get total participants
+      const totalParticipants = await this.healthDataRepository
+        .createQueryBuilder('health')
+        .innerJoin('health.user', 'user')
+        .select('DISTINCT health.userId')
+        .where('user.isActive = :isActive', { isActive: true })
+        .andWhere('health.date BETWEEN :startDate AND :endDate', {
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+        })
+        .getCount();
+
+      return {
+        rank: userScore > 0 ? betterUsersCount + 1 : null,
+        totalParticipants,
+        score: userScore,
+        change: 0, // Would need previous period data
+        period,
+      };
+    }
+  }
+
+  private async getFriendsUserRank(
+    userId: string,
+    period: LeaderboardPeriod,
+  ): Promise<UserRankResponseDto> {
+    // Get user's friends
+    const friendships = await this.friendshipRepository.find({
+      where: [
+        { requesterId: userId, status: FriendshipStatus.ACCEPTED },
+        { addresseeId: userId, status: FriendshipStatus.ACCEPTED },
+      ],
     });
 
-    return {
-      rank: betterUsers + 1,
-      totalParticipants: totalUsers,
-      score: user.totalSteps,
-      change: 0, // Would need historical data to calculate
-    };
+    const friendIds = friendships.map((f) =>
+      f.requesterId === userId ? f.addresseeId : f.requesterId,
+    );
+    friendIds.push(userId); // Include the user
+
+    if (friendIds.length <= 1) {
+      return {
+        rank: 1,
+        totalParticipants: 1,
+        score: 0,
+        change: 0,
+        period,
+      };
+    }
+
+    const dateRange = this.getDateRange(period);
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      return {
+        rank: null,
+        totalParticipants: friendIds.length,
+        score: 0,
+        change: 0,
+        period,
+      };
+    }
+
+    if (period === LeaderboardPeriod.ALL_TIME) {
+      // Use query builder for IN clause
+      const betterFriends = await this.userRepository
+        .createQueryBuilder('user')
+        .where('user.id IN (:...friendIds)', {
+          friendIds: friendIds.filter((id) => id !== userId),
+        })
+        .andWhere('user.isActive = :isActive', { isActive: true })
+        .andWhere('user.totalSteps > :userSteps', {
+          userSteps: user.totalSteps || 0,
+        })
+        .getCount();
+
+      return {
+        rank: betterFriends + 1,
+        totalParticipants: friendIds.length,
+        score: user.totalSteps,
+        change: 0,
+        period,
+      };
+    } else {
+      // Calculate user's score for the period
+      const userHealthData = await this.healthDataRepository
+        .createQueryBuilder('health')
+        .select('SUM(health.steps)', 'totalSteps')
+        .where('health.userId = :userId', { userId })
+        .andWhere('health.date BETWEEN :startDate AND :endDate', {
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+        })
+        .getRawOne();
+
+      const userScore = parseInt(userHealthData?.totalSteps) || 0;
+
+      // Count friends with better scores
+      const betterFriendsCount = await this.healthDataRepository
+        .createQueryBuilder('health')
+        .innerJoin('health.user', 'user')
+        .select('health.userId')
+        .addSelect('SUM(health.steps)', 'totalSteps')
+        .where('health.userId IN (:...friendIds)', {
+          friendIds: friendIds.filter((id) => id !== userId),
+        })
+        .andWhere('user.isActive = :isActive', { isActive: true })
+        .andWhere('health.date BETWEEN :startDate AND :endDate', {
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+        })
+        .groupBy('health.userId')
+        .having('SUM(health.steps) > :userScore', { userScore })
+        .getCount();
+
+      return {
+        rank: userScore > 0 ? betterFriendsCount + 1 : friendIds.length,
+        totalParticipants: friendIds.length,
+        score: userScore,
+        change: 0,
+        period,
+      };
+    }
   }
 
-  private async getFriendsUserRank(userId: string, period: string): Promise<any> {
-    // Placeholder for friends ranking
-    return {
-      rank: null,
-      totalParticipants: 0,
-      score: 0,
-      change: 0,
-    };
-  }
-
-  private getDateRange(period: string): { start: Date; end: Date } {
+  private getDateRange(period: LeaderboardPeriod): { start: Date; end: Date } {
     const now = new Date();
     let start: Date;
 
     switch (period) {
-      case 'Daily':
+      case LeaderboardPeriod.DAILY:
         start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         break;
-      case 'Weekly':
-        start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      case LeaderboardPeriod.WEEKLY:
+        const dayOfWeek = now.getDay();
+        start = new Date(now.getTime() - dayOfWeek * 24 * 60 * 60 * 1000);
+        start.setHours(0, 0, 0, 0);
         break;
-      case 'Monthly':
+      case LeaderboardPeriod.MONTHLY:
         start = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
       default:
@@ -210,4 +550,90 @@ export class LeaderboardService {
 
     return { start, end: now };
   }
-} 
+
+  private generateCacheKey(
+    type: LeaderboardType,
+    period: LeaderboardPeriod,
+    challengeId?: string,
+    limit?: number,
+  ): string {
+    const baseKey = `leaderboard:${type}:${period}:${limit || 50}`;
+    return challengeId ? `${baseKey}:${challengeId}` : baseKey;
+  }
+
+  private generateLeaderboardId(
+    type: LeaderboardType,
+    period: LeaderboardPeriod,
+    challengeId?: string,
+  ): string {
+    const baseId = `${type.toLowerCase()}-${period.toLowerCase()}`;
+    return challengeId ? `challenge-${challengeId}` : baseId;
+  }
+
+  private generateLeaderboardName(
+    type: LeaderboardType,
+    period: LeaderboardPeriod,
+  ): string {
+    if (type === LeaderboardType.CHALLENGE) {
+      return 'Challenge Leaderboard';
+    }
+    return `${type} ${period} Leaderboard`;
+  }
+
+  private findUserRank(
+    entries: LeaderboardEntryDto[],
+    userId: string,
+  ): number | null {
+    const userEntry = entries.find((entry) => entry.user.id === userId);
+    return userEntry ? userEntry.rank : null;
+  }
+
+  private mapToLeaderboardUser(user: User): LeaderboardUserDto {
+    return {
+      id: user.id,
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      avatarUrl: user.avatarUrl,
+    };
+  }
+
+  // Cache invalidation methods
+  async invalidateLeaderboardCache(
+    type?: LeaderboardType,
+    period?: LeaderboardPeriod,
+  ): Promise<void> {
+    // Simple implementation - delete specific patterns
+    const patterns = ['leaderboard:*'];
+    if (type && period) {
+      patterns.push(`leaderboard:${type}:${period}*`);
+    }
+
+    for (const pattern of patterns) {
+      try {
+        await this.cacheManager.del(pattern);
+      } catch (error) {
+        console.warn(`Failed to delete cache pattern ${pattern}:`, error);
+      }
+    }
+  }
+
+  async invalidateUserRankCache(userId: string): Promise<void> {
+    const patterns = [
+      `user-rank:${userId}:Global:Daily`,
+      `user-rank:${userId}:Global:Weekly`,
+      `user-rank:${userId}:Global:Monthly`,
+      `user-rank:${userId}:Friends:Daily`,
+      `user-rank:${userId}:Friends:Weekly`,
+      `user-rank:${userId}:Friends:Monthly`,
+    ];
+
+    for (const key of patterns) {
+      try {
+        await this.cacheManager.del(key);
+      } catch (error) {
+        console.warn(`Failed to delete cache key ${key}:`, error);
+      }
+    }
+  }
+}

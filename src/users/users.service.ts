@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
@@ -22,7 +26,9 @@ export class UsersService {
     });
 
     if (existingUser) {
-      throw new ConflictException('User with this email or username already exists');
+      throw new ConflictException(
+        'User with this email or username already exists',
+      );
     }
 
     // Hash password
@@ -34,7 +40,9 @@ export class UsersService {
       username,
       passwordHash,
       ...userData,
-      dateOfBirth: userData.dateOfBirth ? new Date(userData.dateOfBirth) : undefined,
+      dateOfBirth: userData.dateOfBirth
+        ? new Date(userData.dateOfBirth)
+        : undefined,
     });
 
     return this.userRepository.save(user);
@@ -58,9 +66,9 @@ export class UsersService {
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findById(id);
-    
+
     Object.assign(user, updateUserDto);
-    
+
     if (updateUserDto.dateOfBirth) {
       user.dateOfBirth = new Date(updateUserDto.dateOfBirth);
     }
@@ -72,13 +80,13 @@ export class UsersService {
     return bcrypt.compare(password, user.passwordHash);
   }
 
-  async search(query: string, limit = 20, offset = 0): Promise<{ users: User[]; total: number }> {
+  async search(
+    query: string,
+    limit = 20,
+    offset = 0,
+  ): Promise<{ users: User[]; total: number }> {
     const [users, total] = await this.userRepository.findAndCount({
-      where: [
-        { username: query },
-        { firstName: query },
-        { lastName: query },
-      ],
+      where: [{ username: query }, { firstName: query }, { lastName: query }],
       take: limit,
       skip: offset,
       select: ['id', 'username', 'firstName', 'lastName', 'avatarUrl', 'level'],
@@ -87,17 +95,48 @@ export class UsersService {
     return { users, total };
   }
 
-  async updateStats(userId: string, steps: number, distance: number): Promise<void> {
+  async updateStats(
+    userId: string,
+    steps: number,
+    distance: number,
+  ): Promise<void> {
     await this.userRepository.update(userId, {
       totalSteps: () => `total_steps + ${steps}`,
       totalDistance: () => `total_distance + ${distance}`,
     });
   }
 
-  async updateUserTotals(userId: string, totals: { totalSteps: number; totalDistance: number }): Promise<void> {
+  async updateUserTotals(
+    userId: string,
+    totals: { totalSteps: number; totalDistance: number },
+  ): Promise<void> {
     await this.userRepository.update(userId, {
       totalSteps: totals.totalSteps,
       totalDistance: totals.totalDistance,
     });
   }
-} 
+
+  async updatePassword(userId: string, newPassword: string): Promise<void> {
+    // Hash the new password
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    // Update the user's password
+    await this.userRepository.update(userId, { passwordHash });
+  }
+
+  async verifyEmail(userId: string): Promise<void> {
+    // Mark the user's email as verified
+    await this.userRepository.update(userId, { emailVerified: true });
+  }
+
+  async updateRefreshToken(
+    userId: string,
+    refreshToken: string | null,
+  ): Promise<void> {
+    // Update the user's refresh token (for future use if needed)
+    await this.userRepository.update(userId, {
+      // Note: Add refreshToken field to User entity if storing in database
+      updatedAt: new Date(),
+    });
+  }
+}

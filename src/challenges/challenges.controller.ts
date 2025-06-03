@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Delete,
   Param,
   Query,
@@ -11,13 +10,25 @@ import {
   Request,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ChallengesService } from './challenges.service';
 import { ApiResponseDto } from '../common/dto/api-response.dto';
 import { Challenge } from './entities/challenge.entity';
 import { UserChallenge } from './entities/user-challenge.entity';
-import { UpdateProgressDto } from './dto/update-progress.dto';
+import { CreateChallengeDto } from './dto/create-challenge.dto';
+import { ChallengeQueryDto } from './dto/challenge-query.dto';
+import {
+  ChallengeListResponseDto,
+  ChallengeDetailDto,
+  UserChallengeDto,
+} from './dto/challenge-response.dto';
 
 @ApiTags('challenges')
 @ApiBearerAuth()
@@ -28,34 +39,22 @@ export class ChallengesController {
 
   @Get()
   @ApiOperation({ summary: 'Get available challenges' })
-  @ApiQuery({ name: 'type', required: false, enum: ['Individual', 'Group', 'Friends'] })
-  @ApiQuery({ name: 'category', required: false, enum: ['Steps', 'Distance', 'Time'] })
-  @ApiQuery({ name: 'difficulty', required: false, enum: ['Easy', 'Medium', 'Hard'] })
-  @ApiQuery({ name: 'status', required: false, enum: ['upcoming', 'active', 'completed'] })
-  @ApiQuery({ name: 'featured', required: false, type: Boolean })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiQuery({ name: 'offset', required: false, type: Number })
   @ApiResponse({
     status: 200,
     description: 'Challenges retrieved successfully',
+    type: ApiResponseDto<ChallengeListResponseDto>,
   })
   async getChallenges(
-    @Query('type') type?: string,
-    @Query('category') category?: string,
-    @Query('difficulty') difficulty?: string,
-    @Query('status') status?: string,
-    @Query('featured') featured?: boolean,
-    @Query('limit') limit = 20,
-    @Query('offset') offset = 0,
-  ): Promise<ApiResponseDto<{ challenges: Challenge[]; total: number }>> {
+    @Query() queryDto: ChallengeQueryDto,
+  ): Promise<ApiResponseDto<ChallengeListResponseDto>> {
     const result = await this.challengesService.getChallenges({
-      type,
-      category,
-      difficulty,
-      status,
-      featured,
-      limit: Number(limit),
-      offset: Number(offset),
+      type: queryDto.type,
+      category: queryDto.category,
+      difficulty: queryDto.difficulty,
+      status: queryDto.status,
+      featured: queryDto.featured,
+      limit: queryDto.limit || 20,
+      offset: queryDto.offset || 0,
     });
 
     return {
@@ -65,18 +64,50 @@ export class ChallengesController {
     };
   }
 
+  @Post('create')
+  @ApiOperation({ summary: 'Create a new challenge (Admin only)' })
+  @ApiResponse({
+    status: 201,
+    description: 'Challenge created successfully',
+    type: ApiResponseDto<Challenge>,
+  })
+  async createChallenge(
+    @Body() createChallengeDto: CreateChallengeDto,
+    @Request() req: any,
+  ): Promise<ApiResponseDto<Challenge>> {
+    // TODO: Add admin role guard
+    const challenge = await this.challengesService.createChallenge(
+      createChallengeDto,
+      req.user.id,
+    );
+
+    return {
+      success: true,
+      data: challenge,
+      message: 'Challenge created successfully',
+    };
+  }
+
   @Get('user')
   @ApiOperation({ summary: 'Get user challenges' })
-  @ApiQuery({ name: 'status', required: false, enum: ['active', 'completed', 'upcoming'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['active', 'completed', 'upcoming'],
+  })
   @ApiResponse({
     status: 200,
     description: 'User challenges retrieved successfully',
+    type: ApiResponseDto<UserChallengeDto[]>,
   })
   async getUserChallenges(
     @Request() req: any,
     @Query('status') status?: string,
   ): Promise<ApiResponseDto<UserChallenge[]>> {
-    const challenges = await this.challengesService.getUserChallenges(req.user.id, status);
+    const challenges = await this.challengesService.getUserChallenges(
+      req.user.id,
+      status,
+    );
     return {
       success: true,
       data: challenges,
@@ -89,12 +120,16 @@ export class ChallengesController {
   @ApiResponse({
     status: 200,
     description: 'Challenge details retrieved successfully',
+    type: ApiResponseDto<ChallengeDetailDto>,
   })
   async getChallengeDetails(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: any,
   ): Promise<ApiResponseDto<any>> {
-    const challenge = await this.challengesService.getChallengeDetails(id, req.user.id);
+    const challenge = await this.challengesService.getChallengeDetails(
+      id,
+      req.user.id,
+    );
     return {
       success: true,
       data: challenge,
@@ -107,12 +142,16 @@ export class ChallengesController {
   @ApiResponse({
     status: 201,
     description: 'Successfully joined challenge',
+    type: ApiResponseDto<UserChallenge>,
   })
   async joinChallenge(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: any,
   ): Promise<ApiResponseDto<UserChallenge>> {
-    const userChallenge = await this.challengesService.joinChallenge(id, req.user.id);
+    const userChallenge = await this.challengesService.joinChallenge(
+      id,
+      req.user.id,
+    );
     return {
       success: true,
       data: userChallenge,
@@ -136,27 +175,4 @@ export class ChallengesController {
       message: 'Successfully left challenge',
     };
   }
-
-  @Put(':id/progress')
-  @ApiOperation({ summary: 'Update challenge progress' })
-  @ApiResponse({
-    status: 200,
-    description: 'Challenge progress updated successfully',
-  })
-  async updateProgress(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateProgressDto: UpdateProgressDto,
-    @Request() req: any,
-  ): Promise<ApiResponseDto<UserChallenge>> {
-    const userChallenge = await this.challengesService.updateProgress(
-      id,
-      req.user.id,
-      updateProgressDto,
-    );
-    return {
-      success: true,
-      data: userChallenge,
-      message: 'Challenge progress updated successfully',
-    };
-  }
-} 
+}

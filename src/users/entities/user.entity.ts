@@ -12,6 +12,7 @@ import { UserChallenge } from '../../challenges/entities/user-challenge.entity';
 import { UserAchievement } from '../../achievements/entities/user-achievement.entity';
 import { Friendship } from '../../friends/entities/friendship.entity';
 import { Notification } from '../../notifications/entities/notification.entity';
+import { UserReward } from '../../rewards/entities/user-reward.entity';
 
 @Entity('users')
 export class User {
@@ -46,7 +47,13 @@ export class User {
   @Column({ name: 'height_cm', type: 'int', nullable: true })
   heightCm?: number;
 
-  @Column({ name: 'weight_kg', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  @Column({
+    name: 'weight_kg',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
   weightKg?: number;
 
   @Column({ name: 'total_steps', type: 'bigint', default: 0 })
@@ -60,6 +67,9 @@ export class User {
 
   @Column({ type: 'int', default: 0 })
   experience: number;
+
+  @Column({ type: 'int', default: 0 })
+  points: number;
 
   @Column({ name: 'daily_step_goal', type: 'int', default: 10000 })
   dailyStepGoal: number;
@@ -103,4 +113,7 @@ export class User {
 
   @OneToMany(() => Notification, (notification) => notification.user)
   notifications: Notification[];
-} 
+
+  @OneToMany(() => UserReward, (userReward) => userReward.user)
+  userRewards: UserReward[];
+}

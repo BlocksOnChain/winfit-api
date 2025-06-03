@@ -40,7 +40,12 @@ export class Achievement {
   @Column({ type: 'enum', enum: AchievementCategory })
   category: AchievementCategory;
 
-  @Column({ name: 'requirement_type', type: 'enum', enum: RequirementType, nullable: true })
+  @Column({
+    name: 'requirement_type',
+    type: 'enum',
+    enum: RequirementType,
+    nullable: true,
+  })
   requirementType?: RequirementType;
 
   @Column({ name: 'requirement_value', type: 'bigint', nullable: true })
@@ -56,6 +61,9 @@ export class Achievement {
   createdAt: Date;
 
   // Relations
-  @OneToMany(() => UserAchievement, (userAchievement) => userAchievement.achievement)
+  @OneToMany(
+    () => UserAchievement,
+    (userAchievement) => userAchievement.achievement,
+  )
   userAchievements: UserAchievement[];
-} 
+}

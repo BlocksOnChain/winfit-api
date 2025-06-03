@@ -30,7 +30,13 @@ import { AchievementsModule } from './achievements/achievements.module';
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, jwtConfig, jwtRefreshConfig, redisConfig, awsConfig],
+      load: [
+        databaseConfig,
+        jwtConfig,
+        jwtRefreshConfig,
+        redisConfig,
+        awsConfig,
+      ],
       envFilePath: ['.env.local', '.env'],
     }),
 
@@ -63,10 +69,12 @@ import { AchievementsModule } from './achievements/achievements.module';
     }),
 
     // Rate limiting
-    ThrottlerModule.forRoot([{
-      ttl: 60000, // 1 minute
-      limit: 100, // 100 requests per minute
-    }]),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000, // 1 minute
+        limit: 100, // 100 requests per minute
+      },
+    ]),
 
     // Scheduling
     ScheduleModule.forRoot(),

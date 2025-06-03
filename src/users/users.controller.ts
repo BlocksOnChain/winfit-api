@@ -1,5 +1,18 @@
-import { Controller, Get, Put, Body, UseGuards, Request, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Put,
+  Body,
+  UseGuards,
+  Request,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -23,7 +36,10 @@ export class UsersController {
 
   @Get('profile')
   @ApiOperation({ summary: 'Get current user profile' })
-  @ApiResponse({ status: 200, description: 'User profile retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'User profile retrieved successfully',
+  })
   async getProfile(@Request() req: AuthRequest): Promise<ApiResponseDto<User>> {
     const user = await this.usersService.findById(req.user.id);
     return {
@@ -50,7 +66,10 @@ export class UsersController {
 
   @Get('stats')
   @ApiOperation({ summary: 'Get user statistics' })
-  @ApiResponse({ status: 200, description: 'User statistics retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'User statistics retrieved successfully',
+  })
   async getStats(
     @Request() req: AuthRequest,
     @Query('period') period?: string,
@@ -71,7 +90,7 @@ export class UsersController {
       currentStreak: 7,
       longestStreak: 21,
     };
-    
+
     return {
       success: true,
       data: stats,
@@ -94,4 +113,4 @@ export class UsersController {
       message: 'Users found successfully',
     };
   }
-} 
+}

@@ -6,4 +6,4 @@ export default registerAs('redis', () => ({
   password: process.env.REDIS_PASSWORD || '',
   db: 0,
   ttl: 300, // 5 minutes default TTL
-})); 
+}));

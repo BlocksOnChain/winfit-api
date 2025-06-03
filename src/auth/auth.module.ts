@@ -1,35 +1,44 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-
+import { CacheModule } from '@nestjs/cache-manager';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailService } from './email.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
-import { User } from '../users/entities/user.entity';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    ConfigModule,
     PassportModule,
+    CacheModule.register({
+      ttl: 300, // 5 minutes default TTL
+      max: 1000, // maximum number of items in cache
+    }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        secret: configService.get<string>('jwt.secret'),
+        signOptions: {
+          expiresIn: configService.get<string>('jwt.signOptions.expiresIn'),
+        },
+      }),
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => {
-        const jwtConfig = configService.get('jwt');
-        if (!jwtConfig) {
-          throw new Error('JWT configuration not found');
-        }
-        return jwtConfig;
-      },
     }),
     UsersModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, LocalStrategy],
-  exports: [AuthService],
+  providers: [
+    AuthService,
+    EmailService,
+    JwtStrategy,
+    LocalStrategy,
+    JwtAuthGuard,
+  ],
+  exports: [AuthService, EmailService, JwtAuthGuard],
 })
-export class AuthModule {} 
+export class AuthModule {}

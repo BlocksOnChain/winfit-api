@@ -65,7 +65,12 @@ export class Challenge {
   @Column({ name: 'max_participants', type: 'int', nullable: true })
   maxParticipants?: number;
 
-  @Column({ name: 'reward_type', type: 'enum', enum: RewardType, nullable: true })
+  @Column({
+    name: 'reward_type',
+    type: 'enum',
+    enum: RewardType,
+    nullable: true,
+  })
   rewardType?: RewardType;
 
   @Column({ name: 'reward_value', type: 'text', nullable: true })
@@ -108,4 +113,4 @@ export class Challenge {
 
   @OneToMany(() => UserChallenge, (userChallenge) => userChallenge.challenge)
   userChallenges: UserChallenge[];
-} 
+}

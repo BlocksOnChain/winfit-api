@@ -30,7 +30,13 @@ export class UserChallenge {
   @Column({ name: 'is_completed', default: false })
   isCompleted: boolean;
 
-  @Column({ name: 'completion_percentage', type: 'decimal', precision: 5, scale: 2, default: 0 })
+  @Column({
+    name: 'completion_percentage',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 0,
+  })
   completionPercentage: number;
 
   @CreateDateColumn({ name: 'joined_at' })
@@ -45,15 +51,36 @@ export class UserChallenge {
   @Column({ name: 'points_earned', type: 'int', default: 0 })
   pointsEarned: number;
 
+  // Baseline tracking fields
+  @Column({ name: 'baseline_date', type: 'date', nullable: true })
+  baselineDate?: Date;
+
+  @Column({ name: 'baseline_steps', type: 'bigint', default: 0 })
+  baselineSteps: number;
+
+  @Column({ name: 'baseline_distance', type: 'bigint', default: 0 })
+  baselineDistance: number;
+
+  @Column({ name: 'baseline_active_minutes', type: 'int', default: 0 })
+  baselineActiveMinutes: number;
+
+  @Column({ name: 'baseline_total_steps', type: 'bigint', default: 0 })
+  baselineTotalSteps: number;
+
+  @Column({ name: 'baseline_total_distance', type: 'bigint', default: 0 })
+  baselineTotalDistance: number;
+
   // Relations
   @ManyToOne(() => User, (user) => user.userChallenges, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @ManyToOne(() => Challenge, (challenge) => challenge.userChallenges, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Challenge, (challenge) => challenge.userChallenges, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'challenge_id' })
   challenge: Challenge;
 
   @OneToMany(() => ChallengeProgress, (progress) => progress.userChallenge)
   progress: ChallengeProgress[];
-} 
+}

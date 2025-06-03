@@ -26,11 +26,15 @@ export class UserAchievement {
   unlockedAt: Date;
 
   // Relations
-  @ManyToOne(() => User, (user) => user.userAchievements, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user) => user.userAchievements, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @ManyToOne(() => Achievement, (achievement) => achievement.userAchievements, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Achievement, (achievement) => achievement.userAchievements, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'achievement_id' })
   achievement: Achievement;
-} 
+}

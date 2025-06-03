@@ -16,6 +16,10 @@ This document outlines the complete API specification for the WinFit fitness tra
 - **Validation**: class-validator and class-transformer
 - **Testing**: Jest with Supertest
 
+## Challenge Progress Tracking
+
+**Important Note:** Challenge progress is automatically tracked when users sync their health data via `POST /health/sync`. There is no manual progress update endpoint. This ensures data consistency and provides a seamless user experience where fitness activities automatically contribute to challenge goals.
+
 ## Project Structure
 
 ```
@@ -37,6 +41,8 @@ winfit-api/
 │   ├── challenges/
 │   │   ├── challenges.controller.ts
 │   │   ├── challenges.service.ts
+│   │   ├── challenge-progress.service.ts
+│   │   ├── challenge-automation.service.ts
 │   │   ├── challenges.module.ts
 │   │   ├── entities/
 │   │   └── dto/
@@ -510,7 +516,7 @@ Search for users by username or name.
 ### Health Data Endpoints
 
 #### POST /health/sync
-Sync health data from device.
+Sync health data from device. **This endpoint automatically updates challenge progress for all active challenges.**
 
 **Headers:** `Authorization: Bearer <token>`
 
@@ -528,6 +534,21 @@ Sync health data from device.
   waterIntakeMl?: number;
 }
 ```
+
+**Response:**
+```typescript
+{
+  success: boolean;
+  data: HealthData;
+  message: string;
+}
+```
+
+**Note:** When health data is synced, the system automatically:
+1. Updates progress for all active challenges the user is participating in
+2. Recalculates completion percentages and rankings
+3. Checks for challenge completions and awards points
+4. Updates leaderboards in real-time
 
 #### GET /health/data
 Get health data for a period.
@@ -649,19 +670,6 @@ Leave a challenge.
 {
   success: boolean;
   message: string;
-}
-```
-
-#### PUT /challenges/:id/progress
-Update challenge progress.
-
-**Headers:** `Authorization: Bearer <token>`
-
-**Request Body:**
-```typescript
-{
-  progress: number;
-  date: string; // ISO date
 }
 ```
 
@@ -1068,6 +1076,45 @@ Standardized error response format:
 }
 ```
 
+## Challenge Progress Tracking Architecture
+
+### Automatic Progress Updates
+The system uses an event-driven architecture for challenge progress tracking:
+
+1. **Health Data Sync**: When users call `POST /health/sync`, the system automatically:
+   - Saves the health data
+   - Identifies all active challenges for the user
+   - Updates daily progress for each relevant challenge
+   - Recalculates total progress and completion percentages
+   - Updates rankings in real-time
+   - Awards points for completed challenges
+
+2. **Background Automation**: The `ChallengeAutomationService` runs scheduled tasks:
+   - **Daily (midnight)**: Syncs any missed health data with challenges
+   - **Hourly**: Updates rankings and checks for completions
+   - **Daily (1 AM)**: Cleans up expired challenges and finalizes results
+
+3. **Real-time Features**:
+   - Progress updates are immediate when health data is synced
+   - Rankings are updated in real-time
+   - Challenge completions trigger automatic point awards
+   - Leaderboards reflect current standings
+
+### Data Flow
+```
+Mobile App -> POST /health/sync -> HealthService.syncHealthData()
+                                      ↓
+                              ChallengeProgressService.syncChallengeProgressFromHealthData()
+                                      ↓
+                              [Update daily progress for all active challenges]
+                                      ↓
+                              [Recalculate total progress and rankings]
+                                      ↓
+                              [Check for completions and award points]
+```
+
+This architecture ensures data consistency, eliminates the need for manual progress updates, and provides a seamless user experience where fitness activities automatically contribute to challenge goals.
+
 ## Environment Variables
 
 ```env
@@ -1191,4 +1238,4 @@ Response: {
 - Lazy loading for relationships
 - Response caching headers
 
-This comprehensive API specification provides all the necessary endpoints and functionality to support the WinFit mobile application with a robust, scalable backend built on NestJS and TypeScript. 
+This comprehensive API specification provides all the necessary endpoints and functionality to support the WinFit mobile application with a robust, scalable backend built on NestJS and TypeScript. The challenge progress tracking system is now fully integrated with health data synchronization, providing a seamless and efficient user experience. 

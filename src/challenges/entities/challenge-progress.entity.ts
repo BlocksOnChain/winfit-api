@@ -34,7 +34,9 @@ export class ChallengeProgress {
   createdAt: Date;
 
   // Relations
-  @ManyToOne(() => UserChallenge, (userChallenge) => userChallenge.progress, { onDelete: 'CASCADE' })
+  @ManyToOne(() => UserChallenge, (userChallenge) => userChallenge.progress, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'user_challenge_id' })
   userChallenge: UserChallenge;
-} 
+}
