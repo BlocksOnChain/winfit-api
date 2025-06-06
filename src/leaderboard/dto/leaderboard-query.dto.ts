@@ -10,16 +10,16 @@ import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum LeaderboardType {
-  GLOBAL = 'Global',
-  FRIENDS = 'Friends',
-  CHALLENGE = 'Challenge',
+  GLOBAL = 'global',
+  FRIENDS = 'friends',
+  CHALLENGE = 'challenge',
 }
 
 export enum LeaderboardPeriod {
-  DAILY = 'Daily',
-  WEEKLY = 'Weekly',
-  MONTHLY = 'Monthly',
-  ALL_TIME = 'AllTime',
+  DAILY = 'daily',
+  WEEKLY = 'weekly',
+  MONTHLY = 'monthly',
+  ALL_TIME = 'alltime',
 }
 
 export class LeaderboardQueryDto {

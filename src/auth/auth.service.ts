@@ -264,7 +264,7 @@ export class AuthService {
   }
 
   private async getStoredRefreshToken(userId: string): Promise<string | null> {
-    return await this.cacheManager.get(`refresh_token:${userId}`);
+    return (await this.cacheManager.get(`refresh_token:${userId}`)) as string | null;
   }
 
   private async removeRefreshToken(userId: string): Promise<void> {
@@ -285,7 +285,7 @@ export class AuthService {
   }
 
   private async getEmailFromResetToken(token: string): Promise<string | null> {
-    return await this.cacheManager.get(`reset_token:${token}`);
+    return (await this.cacheManager.get(`reset_token:${token}`)) as string | null;
   }
 
   private async removePasswordResetToken(token: string): Promise<void> {
@@ -307,7 +307,7 @@ export class AuthService {
   private async getEmailFromVerificationToken(
     token: string,
   ): Promise<string | null> {
-    return await this.cacheManager.get(`verification_token:${token}`);
+    return (await this.cacheManager.get(`verification_token:${token}`)) as string | null;
   }
 
   private async removeVerificationToken(token: string): Promise<void> {

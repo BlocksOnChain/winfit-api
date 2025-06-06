@@ -491,7 +491,7 @@ export class HealthService {
       totalDays,
       activityPercentage,
       bestDay: {
-        date: bestDay.date.toISOString().split('T')[0],
+        date: new Date(bestDay.date).toISOString().split('T')[0],
         steps: bestDay.steps,
       },
       trends,
@@ -767,7 +767,7 @@ export class HealthService {
     const weeklyData: { [key: string]: HealthData } = {};
 
     healthData.forEach((data) => {
-      const weekStart = this.getWeekStart(data.date);
+      const weekStart = this.getWeekStart(new Date(data.date));
       const weekKey = weekStart.toISOString().split('T')[0];
 
       if (!weeklyData[weekKey]) {
@@ -815,9 +815,10 @@ export class HealthService {
     const monthlyData: { [key: string]: HealthData } = {};
 
     healthData.forEach((data) => {
+      const date = new Date(data.date);
       const monthStart = new Date(
-        data.date.getFullYear(),
-        data.date.getMonth(),
+        date.getFullYear(),
+        date.getMonth(),
         1,
       );
       const monthKey = monthStart.toISOString().split('T')[0];

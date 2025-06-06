@@ -17,6 +17,7 @@ import {
   ApiHeader,
   ApiConsumes,
   ApiProduces,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { Request as ExpressRequest } from 'express';
 import { AuthService } from './auth.service';
@@ -528,22 +529,24 @@ const resetPassword = async (token: string, newPassword: string) => {
     return ApiResponseDto.success(null, 'Password reset successfully');
   }
 
-  @Post('verify-email')
+  @Get('verify-email')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Verify email address',
     description: `
 ## Email Verification
 
-Verify user email address using the token received via email.
+Verify user email address using the token received via email link.
+
+### Usage:
+Simply click the verification link from your email, or access:
+\`GET /api/v1/auth/verify-email?token=YOUR_TOKEN\`
 
 ### React Native Integration:
 \`\`\`typescript
 const verifyEmail = async (token: string) => {
-  const response = await fetch('/api/v1/auth/verify-email', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token })
+  const response = await fetch(\`/api/v1/auth/verify-email?token=\${token}\`, {
+    method: 'GET',
   });
   
   const result = await response.json();
@@ -579,7 +582,14 @@ useEffect(() => {
 - Verification tokens expire after 24 hours
 - Users can request a new verification email if token expires
 - Some features may be limited until email is verified
+- This endpoint can be accessed directly from email links
     `,
+  })
+  @ApiQuery({
+    name: 'token',
+    description: 'Email verification token received via email',
+    example: '1ac66c7b3f77c4b4fb4a0265f6408661658f739a29e783ee0f828d28e5d9b9d9',
+    required: true,
   })
   @ApiResponse({
     status: 200,
@@ -605,9 +615,9 @@ useEffect(() => {
     },
   })
   async verifyEmail(
-    @Body() verifyEmailDto: VerifyEmailDto,
+    @Query('token') token: string,
   ): Promise<ApiResponseDto> {
-    await this.authService.verifyEmail(verifyEmailDto);
+    await this.authService.verifyEmail({ token });
     return ApiResponseDto.success(null, 'Email verified successfully');
   }
 

@@ -620,12 +620,12 @@ export class LeaderboardService {
 
   async invalidateUserRankCache(userId: string): Promise<void> {
     const patterns = [
-      `user-rank:${userId}:Global:Daily`,
-      `user-rank:${userId}:Global:Weekly`,
-      `user-rank:${userId}:Global:Monthly`,
-      `user-rank:${userId}:Friends:Daily`,
-      `user-rank:${userId}:Friends:Weekly`,
-      `user-rank:${userId}:Friends:Monthly`,
+      `user-rank:${userId}:${LeaderboardType.GLOBAL}:${LeaderboardPeriod.DAILY}`,
+      `user-rank:${userId}:${LeaderboardType.GLOBAL}:${LeaderboardPeriod.WEEKLY}`,
+      `user-rank:${userId}:${LeaderboardType.GLOBAL}:${LeaderboardPeriod.MONTHLY}`,
+      `user-rank:${userId}:${LeaderboardType.FRIENDS}:${LeaderboardPeriod.DAILY}`,
+      `user-rank:${userId}:${LeaderboardType.FRIENDS}:${LeaderboardPeriod.WEEKLY}`,
+      `user-rank:${userId}:${LeaderboardType.FRIENDS}:${LeaderboardPeriod.MONTHLY}`,
     ];
 
     for (const key of patterns) {

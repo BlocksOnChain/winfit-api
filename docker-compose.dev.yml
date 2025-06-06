@@ -1,0 +1,117 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: winfit-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: winfit
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./setup-db.sql:/docker-entrypoint-initdb.d/setup-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d winfit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: winfit-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NestJS API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: winfit-api-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "9229:9229"  # Debug port
+    environment:
+      NODE_ENV: development
+      APP_PORT: 3000
+      APP_URL: http://localhost:3000
+      
+      # Database
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: winfit
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: password
+      DATABASE_SSL: false
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      
+      # JWT
+      JWT_SECRET: development-jwt-secret-key-min-32-characters-long
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_SECRET: development-refresh-secret-key-min-32-characters-long
+      JWT_REFRESH_EXPIRES_IN: 7d
+      
+      # Development specific
+      SWAGGER_ENABLED: true
+      AUTO_SEED_ACHIEVEMENTS: true
+      DEBUG_MODE: true
+      VERBOSE_LOGGING: true
+      
+      # Rate limiting (more permissive for dev)
+      RATE_LIMIT_GLOBAL: 1000
+      RATE_LIMIT_AUTH: 50
+      RATE_LIMIT_UPLOADS: 100
+      
+      # Email (optional for dev)
+      EMAIL_HOST: smtpout.secureserver.net
+      EMAIL_PORT: 465
+      EMAIL_USER: info@choz.io
+      EMAIL_PASSWORD: e.M%.3jna)3BvFt
+      EMAIL_FROM_NAME: WinFit Team
+      EMAIL_FROM_ADDRESS: info@choz.io
+      
+      # AWS S3 (optional for dev)
+      AWS_ACCESS_KEY_ID: your-access-key-id
+      AWS_SECRET_ACCESS_KEY: your-secret-access-key
+      AWS_REGION: us-east-1
+      AWS_S3_BUCKET: winfit-uploads-dev
+      
+      # FCM (optional for dev)
+      FCM_SERVICE_ACCOUNT: '{"type":"service_account","project_id":"your-project-id"}'
+      
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - winfit_dist_dev:/app/dist
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data_dev:
+    driver: local
+  redis_data_dev:
+    driver: local
+  winfit_dist_dev:
+    driver: local

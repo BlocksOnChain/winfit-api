@@ -41,7 +41,7 @@ export class HealthDataResponseDto {
   static fromEntity(entity: HealthData): HealthDataResponseDto {
     return {
       id: entity.id,
-      date: entity.date.toISOString().split('T')[0],
+      date: new Date(entity.date).toISOString().split('T')[0],
       steps: entity.steps,
       distance: entity.distance,
       caloriesBurned: entity.caloriesBurned,
@@ -50,8 +50,8 @@ export class HealthDataResponseDto {
       heartRateAvg: entity.heartRateAvg,
       sleepHours: entity.sleepHours ? Number(entity.sleepHours) : undefined,
       waterIntakeMl: entity.waterIntakeMl,
-      createdAt: entity.createdAt.toISOString(),
-      updatedAt: entity.updatedAt.toISOString(),
+      createdAt: new Date(entity.createdAt).toISOString(),
+      updatedAt: new Date(entity.updatedAt).toISOString(),
     };
   }
 

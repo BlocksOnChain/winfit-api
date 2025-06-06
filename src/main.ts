@@ -175,7 +175,6 @@ All endpoints return consistent JSON responses:
 
   console.log(`🚀 WinFit API is running on: http://localhost:${port}`);
   console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
-  console.log(`📱 React Native Integration Guide: API-Integration-Guide.md`);
 }
 
 bootstrap();

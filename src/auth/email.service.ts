@@ -11,7 +11,7 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       host: this.configService.get('EMAIL_HOST'),
       port: this.configService.get('EMAIL_PORT'),
-      secure: this.configService.get('EMAIL_PORT') === 465,
+      secure: true,
       auth: {
         user: this.configService.get('EMAIL_USER'),
         pass: this.configService.get('EMAIL_PASSWORD'),
@@ -23,7 +23,7 @@ export class EmailService {
     email: string,
     resetToken: string,
   ): Promise<void> {
-    const resetUrl = `${this.configService.get('APP_URL')}/reset-password?token=${resetToken}`;
+    const resetUrl = `${this.configService.get('APP_URL')}/api/v1/auth/reset-password?token=${resetToken}`;
 
     const mailOptions = {
       from: this.configService.get('EMAIL_USER'),
@@ -68,7 +68,7 @@ export class EmailService {
     email: string,
     verificationToken: string,
   ): Promise<void> {
-    const verificationUrl = `${this.configService.get('APP_URL')}/verify-email?token=${verificationToken}`;
+    const verificationUrl = `${this.configService.get('APP_URL')}/api/v1/auth/verify-email?token=${verificationToken}`;
 
     const mailOptions = {
       from: this.configService.get('EMAIL_USER'),
